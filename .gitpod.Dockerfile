@@ -1,7 +1,7 @@
 FROM gitpod/workspace-full
 
-RUN apt-get update && \
-    DEBIAN_FRONTEND=noninteractive \
-    apt-get install -yy --no-install-recommends \
+RUN sudo apt-get update && \
+    sudo env DEBIAN_FRONTEND=noninteractive \
+        apt-get install -yy --no-install-recommends \
         gcc g++ make cmake curl git ca-certificates ssh
-RUN apt-get clean -y
+RUN sudo apt-get clean -y
