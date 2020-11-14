@@ -1,0 +1,12 @@
+; DO NOT EDIT (unless you know what you are doing)
+;
+; This subdirectory is a git "subrepo", and this file is maintained by the
+; git-subrepo command. See https://github.com/git-commands/git-subrepo#readme
+;
+[subrepo]
+	remote = https://gitlab.com/kyb/ringbuffer
+	branch = master
+	commit = 8843d90e1ca1189def2d258d84fc03ce8ca4c629
+	parent = a1eac025640d03b40fa29b06cb32d273c48c37fa
+	method = merge
+	cmdver = 0.4.1

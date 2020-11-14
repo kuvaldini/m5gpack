@@ -1,0 +1,33 @@
+# TODO build library and tests as separate parts. build_test depends on artifacts of build_main, test stage depends on artifacts of build_test
+#
+
+image: rikorose/gcc-cmake
+
+variables:
+  #should be default GIT_STRATEGY: fetch
+  GIT_SUBMODULE_STRATEGY: none  #none,normal,recursive
+
+## Manually Handle git submodules. Taken from http://stackoverflow.com/questions/15674064/github-submodule-access-rights-travis-ci#24600210
+before_script:
+  - sed -i 's/git@github.com:/https:\/\/github.com\//' .gitmodules  &&  cat .gitmodules
+  - git submodule update --init --recursive
+
+build:
+  stage: build
+  script:
+    - mkdir ./build  &&  cd ./build
+    - cmake -G"Unix Makefiles" ../
+    - cmake --build ./
+    - cd ./test  &&  ctest
+  artifacts:
+    paths:
+      - build/
+    
+test:
+  stage: test
+  script:
+    - cd ./build/test
+    - ctest
+  #dependencies:
+  #  - build
+    
