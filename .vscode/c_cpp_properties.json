@@ -1,18 +1,33 @@
 {
     "configurations": [
         {
-            "name": "gcc",
+            "name": "g++",
             "includePath": [
-                "${workspaceFolder}/**"
-                ,"build/"
+                "${workspaceFolder}/**",
+                "include/",
+                "build/"
             ],
             "defines": [],
             "macFrameworkPath": [],
-            "compilerPath": "gcc-10",
-            "cStandard": "c11",
-            "cppStandard": "gnu++17",
+            "compilerPath": "/usr/local/bin/g++-10",
+            "cStandard": "c17",
+            "cppStandard": "gnu++20",
             "intelliSenseMode": "gcc-x64",
             "compileCommands": "${workspaceFolder}/build/compile_commands.json"
+        },
+        {
+            "name": "clang",
+            "compileCommands": "${workspaceFolder}/build/compile_commands.json",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "${workspaceFolder}"
+            ],
+            "defines": [],
+            "macFrameworkPath": [],
+            "compilerPath": "/usr/local/opt/llvm/bin/clang",
+            "cStandard": "gnu17",
+            "cppStandard": "gnu++20",
+            "intelliSenseMode": "clang-x64"
         }
     ],
     "version": 4

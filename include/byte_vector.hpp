@@ -10,9 +10,9 @@ struct byte_vector : std::vector<uint8_t> {
 };
 
 template<typename T>
-inline auto operator<<(byte_vector&bv, T const& v) ->std::enable_if_t<std::is_integral_v<T>, byte_vector& >
+inline auto operator<<(byte_vector&bv, T const& v) ->std::enable_if_t<std::is_arithmetic_v<T>, byte_vector& >
 {
-    static_assert(std::is_integral_v<T>,"operator<<(byte_vector&,T) implemented for integral types only");
+    static_assert(std::is_arithmetic_v<T>,"operator<<(byte_vector&,T) implemented for arithmetic types only");
     //ToDo C++20 if constexpr (std::endian::native == std::endian::little)
 #if BYTE_ORDER == LITTLE_ENDIAN
     std::reverse_iterator<uint8_t*> first{(uint8_t *) (&v + 1)}, last{(uint8_t *) (&v)};
@@ -29,6 +29,15 @@ inline auto operator<<(byte_vector&vec, byte_vector const& bv) ->byte_vector&
     return vec;
 }
 
+template<typename T>
+inline auto operator<<(byte_vector&vec, T const& br)
+->decltype(br.begin(), br.end(), vec)  // SFINAE check if type has member functions
+                                       // ToDo C++20 requires
+{
+    vec.insert(vec.end(), br.begin(), br.end());
+    return vec;
+}
+
 #include <string_view>
 inline auto operator<<(byte_vector&vec, std::string_view const& sv) ->byte_vector&
 {
@@ -39,7 +48,7 @@ inline auto operator<<(byte_vector&vec, std::string_view const& sv) ->byte_vecto
 
 inline auto operator<<(byte_vector&vec, char const* str) ->byte_vector&
 {
-    //ToDo optimization wanted
+    //ToDo optimization wanted: first copy bytes till \0 then fill size.
     // while(*str!='\0')
     //     vec<<*str++;
     // return vec;
