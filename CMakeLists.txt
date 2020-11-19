@@ -8,7 +8,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 ### Interface library user project to be linked with
 ### to include byte_vector.hpp and other headers
 add_library(m5gpack INTERFACE)
-target_include_directories(m5gpack INTERFACE . include)
+target_include_directories(m5gpack INTERFACE include)
 ##################
 
 # ################## byte_vector_amalgamate ##################
@@ -40,10 +40,10 @@ target_include_directories(m5gpack INTERFACE . include)
 # ##################
 
 # ################## Tests ##################
-# include(CTest)
-# if(BUILD_TESTING) ## By default CMake provides ON
-#    add_subdirectory(tests)
-# endif()
+include(CTest)
+if(BUILD_TESTING) ## By default CMake provides ON
+   add_subdirectory(tests)
+endif()
 # ##################
 
 

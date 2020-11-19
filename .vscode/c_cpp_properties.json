@@ -2,6 +2,7 @@
     "configurations": [
         {
             "name": "g++",
+            "compileCommands": "${workspaceFolder}/build/compile_commands.json",
             "includePath": [
                 "${workspaceFolder}/**",
                 "include/",
@@ -13,18 +14,17 @@
             "cStandard": "c17",
             "cppStandard": "gnu++20",
             "intelliSenseMode": "gcc-x64",
-            "compileCommands": "${workspaceFolder}/build/compile_commands.json"
         },
         {
-            "name": "clang",
-            "compileCommands": "${workspaceFolder}/build/compile_commands.json",
+            "name": "clang++",
+            "compileCommands": "${workspaceFolder}/build-clang/compile_commands.json",
             "includePath": [
                 "${workspaceFolder}/**",
                 "${workspaceFolder}"
             ],
             "defines": [],
             "macFrameworkPath": [],
-            "compilerPath": "/usr/local/opt/llvm/bin/clang",
+            "compilerPath": "/usr/local/opt/llvm/bin/clang++",
             "cStandard": "gnu17",
             "cppStandard": "gnu++20",
             "intelliSenseMode": "clang-x64"

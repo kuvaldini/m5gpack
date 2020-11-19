@@ -13,19 +13,14 @@ if(STATUS AND NOT ${STATUS} EQUAL 0)
 endif()
 add_subdirectory(googletest)
 
-add_executable(test-byte_vector
-    test-byte_range_ascii.cpp
-    test-byte_range_hex.cpp
-    test-byte_vector.cpp
-    test-byte_range.cpp
+add_executable(gtest-m5gpack
+    gtest-m5gpack.cpp
     )
-target_compile_features(test-byte_vector PRIVATE cxx_std_17)
-target_link_libraries(test-byte_vector PRIVATE 
-    gtest_main gtest 
-    byte_vector)
-add_test(NAME test-byte_vector COMMAND test-byte_vector)
-# target_include_directories(test-byte_vector PRIVATE ${CMAKE_BINARY_DIR}/..) ## For rev_label.hpp
+target_compile_features(gtest-m5gpack PRIVATE cxx_std_17)
+target_link_libraries(gtest-m5gpack PRIVATE gtest_main gtest m5gpack)
+add_test(NAME gtest-m5gpack COMMAND gtest-m5gpack)
+# target_include_directories(gtest-m5gpack PRIVATE ${CMAKE_BINARY_DIR}/..) ## For rev_label.hpp
 
 ##maybe todo for CTest
 #include(GoogleTest)
-#gtest_discover_tests(test-byte_vector)
+#gtest_discover_tests(gtest-m5gpack)

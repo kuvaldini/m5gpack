@@ -19,7 +19,7 @@ int main()
    // cout<<"hello "<<sizeof(string_view)<<" "<<sizeof(int*)<<endl;
    // cout<< u.i << "  " << u.i64 <<endl;
    
-   m5g m;
+   m5g_byte_stream m5s;
    
    // m5value mv;
    
@@ -38,7 +38,7 @@ int main()
    cout<<"w:"<<w<<endl;
    cout<<"moved v:"<<v<<endl; //v must be nil
    
-   auto y{move(w)};я
+   auto y{move(w)};
    cout<<"y:"<<y<<endl;
    cout<<"moved w:"<<w<<endl;
    
@@ -47,6 +47,9 @@ int main()
    
    v = m5g_value::map_t{ {"a", arr} 
                        , {"help", m5g_value::array_t{ "11d", 33.6, m5g_value::array_t{1,2} }} 
+                       , {m5g_value::nil, m5g_value::nil}
+                       , {2,54.3}
+                       , {0.9,21.3}
                        };
    cout<<"map2 v:"<<v<<endl;
    
