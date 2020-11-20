@@ -70,7 +70,7 @@ struct m5g_value
    //    nil=0, boolean, sigint, unsint, float32, float64, str, bin, arr, map, ext, time
    // } kind = nil;
    
-   using var_t = std::variant<nil_t,bool,int64_t,uint64_t,float,double,string,bin_t,array_t,map_t,ext_t>;//,time_t>;
+   using var_t = std::variant<nil_t,bool,int64_t,uint64_t,float,double,string,bin_t,array_t,map_t,ext_t,time_t>;
    
    var_t var;  // the only variable member
    
@@ -436,6 +436,18 @@ struct m5g_byte_stream : std::vector<uint8_t>
             else
                std::terminate();//throw
             detail() << e.type << e.data;
+         },
+         [&](m5g_value::time_t const& t){
+            using namespace std::chrono;
+            auto sec  = uint64_t(duration_cast<seconds>(t).count());
+            auto nsec = uint64_t(duration_cast<nanoseconds>(t).count());
+            if (sec <= UINT32_MAX){
+               detail() << timestamp32 << char(-1) << uint32_t(sec);
+            }else if (sec <= 0x3'FFFF'FFFFu){
+               detail() << timestamp64 << char(-1) << ((nsec << 34)|sec);
+            }else{
+               detail() << timestamp96 << char(12) << char(-1) << uint32_t(nsec) << sec;
+            }
          }
       },val.var);
       return *this;
