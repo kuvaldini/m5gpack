@@ -13,13 +13,10 @@ if(STATUS AND NOT ${STATUS} EQUAL 0)
 endif()
 add_subdirectory(googletest)
 
-add_executable(gtest-m5gpack
-    gtest-m5gpack.cpp
-    )
-target_compile_features(gtest-m5gpack PRIVATE cxx_std_17)
+add_executable(gtest-m5gpack gtest-m5gpack.cpp)
+target_compile_features(gtest-m5gpack PRIVATE cxx_std_20)
 target_link_libraries(gtest-m5gpack PRIVATE gtest_main gtest m5gpack)
 add_test(NAME gtest-m5gpack COMMAND gtest-m5gpack)
-# target_include_directories(gtest-m5gpack PRIVATE ${CMAKE_BINARY_DIR}/..) ## For rev_label.hpp
 
 ##maybe todo for CTest
 #include(GoogleTest)

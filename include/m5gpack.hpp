@@ -4,13 +4,12 @@
 //todo printer densed, printer pretty, printer json
 //todo 
 
-
+// #include <endian>
 #include <cstdint>
 #include <optional>
 #include <variant>
 #include <vector>
 #include <string_view>
-#include <map>
 #include <chrono>
 #include <iostream>
 #include <iomanip>
@@ -37,7 +36,7 @@ struct m5g_value
    using string = std::string;
    template<class...Ts> using vector  = std::vector<Ts...>;
    template<class...Ts> using variant = std::variant<Ts...>;
-   template<class...Ts> using stdmap  = std::map<Ts...>;
+   // template<class...Ts> using stdmap  = std::map<Ts...>;
    using ostream = std::ostream;
    
    struct nil_t { 
@@ -49,17 +48,20 @@ struct m5g_value
    using bin_t = byte_vector;
    using blob_t = bin_t;
    
-   // using array_t = std::vector<m5g_value>;
    struct array_t : std::vector<m5g_value>{ //declare struct instead of using type directly for better compile-time messages
       using std::vector<m5g_value>::vector;
    };
    
-   // using map_t  = std::map<m5g_value,m5g_value>;
-   struct map_t : std::map<m5g_value,m5g_value>{ //declare struct instead of using type directly for better compile-time messages
-      using std::map<m5g_value,m5g_value>::map;
+   using pair_t = std::pair<m5g_value,m5g_value>;
+   struct map_t : std::vector<pair_t>{ //declare struct instead of using type directly for better compile-time messages
+      using std::vector<pair_t>::vector;
    };
    
-   struct ext_t{}; //todo
+   struct ext_t{
+      uint8_t type;
+      byte_vector data;
+      auto operator<=>(const ext_t&) const = default;
+   };
    
    using time_t =  std::chrono::nanoseconds;
    
@@ -68,7 +70,7 @@ struct m5g_value
    //    nil=0, boolean, sigint, unsint, float32, float64, str, bin, arr, map, ext, time
    // } kind = nil;
    
-   using var_t = std::variant<nil_t,bool,int64_t,uint64_t,float,double,string,bin_t,array_t,map_t>;//,ext_t,time_t>;
+   using var_t = std::variant<nil_t,bool,int64_t,uint64_t,float,double,string,bin_t,array_t,map_t,ext_t>;//,time_t>;
    
    var_t var;  // the only variable member
    
@@ -82,6 +84,7 @@ struct m5g_value
    /* constexpr */ m5g_value& operator=(m5g_value&&val)      { this->var=std::move(val.var); val.var={}; return *this; }
    /* constexpr */ m5g_value& operator=(m5g_value const&val) { this->var=val.var;                        return *this; }
    
+   constexpr m5g_value(unsigned u):var(uint64_t(u)){}
    
    auto get_as_optional_long_double()const{
       return std::visit(
@@ -207,8 +210,10 @@ map 32 	11011111 	0xdf
 negative fixint 	111xxxxx 	0xe0 - 0xff
 */
 
-struct m5g_byte_stream :byte_vector
+struct m5g_byte_stream : std::vector<uint8_t> 
 {
+   using std::vector<uint8_t>::vector;
+   
    enum format : uint8_t {
       /// Nil format stores nil in 1 byte.
       nil = 0xc0,
@@ -216,14 +221,16 @@ struct m5g_byte_stream :byte_vector
       truo = 0xc3,
       
       /// positive fixnum stores 7-bit positive integer 0XXXXXXX
-      pos_fixnum_id = 0b00000000,
-      pos_fixnum_data_mask = 0b01111111,
-      pos_fixnum_id_mask = (uint8_t)~pos_fixnum_data_mask,
+      pos_fixnum_id  = 0b00000000,
+      pos_fixnum_max = 127,
+      // pos_fixnum_data_mask = 0b01111111,
+      // pos_fixnum_id_mask = (uint8_t)~pos_fixnum_data_mask,
       
       /// negative fixnum stores 5-bit negative integer 111YYYYY
       neg_fixnum_id = (uint8_t)0b11100000,
-      neg_fixnum_data_mask = (uint8_t)0b00011111,
-      neg_fixnum_id_mask = (uint8_t)~neg_fixnum_data_mask,
+      neg_fixnum_id_mask = (uint8_t)0b11100000,
+      // neg_fixnum_min = (uint8_t)~neg_fixnum_id_mask,
+      // neg_fixnum_data_mask = (uint8_t)0b00011111,
       
       /// uint 8 stores a 8-bit unsigned integer
       uint8  = 0xcc,
@@ -243,8 +250,10 @@ struct m5g_byte_stream :byte_vector
       
       /// fixstr stores a byte array whose length is upto 31 bytes:
       fixstr_id = 0b10100000,  ///101XXXXX
-      fixstr_len_mask = 0b00011111,
-      fixstr_id_mask = (uint8_t)~fixstr_len_mask,
+      fixstr_id_mask  = 0b11100000,
+      fixstr_len_mask = (uint8_t)~fixstr_id_mask,
+      fixstr_len_max = fixstr_len_mask,
+      // fixstr_id_mask = (uint8_t)~fixstr_len_mask,
       
       /// str 8 stores a byte array whose length is upto (2^8)-1 bytes:
       str8 = 0xd9,
@@ -273,7 +282,7 @@ struct m5g_byte_stream :byte_vector
       /// array 16 stores an array whose length is upto (2^16)-1 elements:
       arr16 = 0xdc,
       
-      /// array 32 stores an array whose length is upto (2^32)-1 elements:s
+      /// array 32 stores an array whose length is upto (2^32)-1 elements:
       arr32 = 0xdd,
       
       /// fixmap stores a map whose length is upto 15 elements
@@ -312,211 +321,168 @@ struct m5g_byte_stream :byte_vector
       timestamp96 = 0xc7,
    };
    
-   // byte_vector stream;
-   
-   friend byte_vector& operator<<(byte_vector& bv, enum format ef){
-      return bv << (uint8_t)ef;
-   }
-   
    m5g_byte_stream& operator<<(m5g_value const& val){
-      byte_vector& bv = *this;
       std::visit(overloaded{
          [](auto&&a){
             static_assert(always_false_v<decltype(a)>,"expected overload for type");
          },
          [&](m5g_value::nil_t arg){ 
-            bv << nil;
+            detail() << nil;
          },
          [&](bool b){ 
-            bv << (b ? truo : falso); 
+            detail() << (b ? truo : falso); 
          },
          [&](int64_t const& i){
-            if((i & neg_fixnum_data_mask) == i){
-               bv << int8_t(i | neg_fixnum_id);
+            if(i < 0 and i >= -32){  // 5 bit allowed
+               detail() << int8_t(i);
             }else if(int8_t(i) == i){
-               bv << int8 << int8_t(i);
+               detail() << int8 << int8_t(i);
             }else if(int16_t(i) == i){
-               bv << int16 << int16_t(i);
+               detail() << int16 << int16_t(i);
             }else if(int32_t(i) == i){
-               bv << int32 << int32_t(i);
+               detail() << int32 << int32_t(i);
             }else{
-               bv << int64 << i;
+               detail() << int64 << i;
             }
          },
          [&](uint64_t const& u){
-            if((u & pos_fixnum_data_mask) == u){
-               bv << uint8_t(u | pos_fixnum_id);
+            if(u <= 127){  // 7 bit allowed
+               detail() << uint8_t(u);
             }else if(uint8_t(u) == u){
-               bv << uint8 << uint8_t(u);
+               detail() << uint8 << uint8_t(u);
             }else if(uint16_t(u) == u){
-               bv << uint16 << uint16_t(u);
+               detail() << uint16 << uint16_t(u);
             }else if(uint32_t(u) == u){
-               bv << uint32 << uint32_t(u);
+               detail() << uint32 << uint32_t(u);
             }else{
-               bv << uint64 << u;
+               detail() << uint64 << u;
             }
          },
          [&](float const& f){
-            bv << float32 << f;
+            detail()<< float32 << f;
          },
          [&](double const& f){
-            bv << float64 << f;
+            detail() << float64 << f;
          },
          [&](std::string const& str){
             auto size = str.size();
             if(size == (size & fixstr_len_mask)){
-               bv << uint8_t(size | fixstr_id) << str;
+               detail() << uint8_t(size | fixstr_id) << str;
             }else if(uint8_t(size) == size){
-               bv << str8 << uint8_t(size) << str;
+               detail() << str8 << uint8_t(size) << str;
             }else if(uint16_t(size) == size){
-               bv << str16 << uint16_t(size) << str;
+               detail() << str16 << uint16_t(size) << str;
             }else if(uint32_t(size) == size){
-               bv << str32 << uint32_t(size) << str;
-            }
+               detail() << str32 << uint32_t(size) << str;
+            }else
+               std::terminate(); //throw m5g_exception("wrong size is more than uint32_t");
          },
          [&](m5g_value::bin_t const& bytes){
             auto size = bytes.size();
             if(uint8_t(size) == size){
-               bv << bin8 << uint8_t(size);
+               detail() << bin8 << uint8_t(size);
             }else if(uint16_t(size) == size){
-               bv << bin16 << uint16_t(size);
+               detail() << bin16 << uint16_t(size);
             }else if(uint32_t(size) == size){
-               bv << bin32 << uint32_t(size);
-            }
-            bv << bytes;
+               detail() << bin32 << uint32_t(size);
+            }else
+               std::terminate(); //throw m5g_exception("wrong size is more than uint32_t");
+            detail() << bytes;
          },
          [&](m5g_value::array_t const& arr){
             auto size = arr.size();
             if(size <= fixarr_len_max)
-               bv << uint8_t(size | fixarr_id);
+               detail() << uint8_t(size | fixarr_id);
             else if(uint16_t(size) == size)
-               bv << arr16 << uint16_t(size);
+               detail() << arr16 << uint16_t(size);
             else if(uint32_t(size) == size)
-               bv << arr32 << uint32_t(size);
+               detail() << arr32 << uint32_t(size);
+            else
+               std::terminate(); //throw m5g_exception("wrong size is more than uint32_t");
             for(auto&each:arr)
                *this << each;
          },
          [&](m5g_value::map_t const& m){
             auto size = m.size();
             if(size <= fixmap_len_max)
-               bv << uint8_t(size | fixmap_id);
+               detail() << uint8_t(size | fixmap_id);
             else if(uint16_t(size) == size)
-               bv << map16 << uint16_t(size);
+               detail() << map16 << uint16_t(size);
             else if(uint32_t(size) == size)
-               bv << map32 << uint32_t(size);
+               detail() << map32 << uint32_t(size);
+            else
+               std::terminate(); //throw m5g_exception("wrong size is more than uint32_t");
             for(auto&[k,v]:m)
                *this << k << v;
+         },
+         [&](m5g_value::ext_t const& e){
+            auto size = e.data.size();
+            if(size == 1)
+               detail() << fixext1;
+            else if(size == 2)
+               detail() << fixext2;
+            else if(size == 4)
+               detail() << fixext4;
+            else if(size == 8)
+               detail() << fixext8;
+            else if(size == 16)
+               detail() << fixext16;
+            else if(uint8_t(size) == size)
+               detail() << ext8 << uint16_t(size);
+            else if(uint16_t(size) == size)
+               detail() << ext16 << uint16_t(size);
+            else if(uint32_t(size) == size)
+               detail() << ext32 << uint32_t(size);
+            else
+               std::terminate();//throw
+            detail() << e.type << e.data;
          }
       },val.var);
       return *this;
    }
    
+   auto operator<<(m5g_byte_stream const& bs) ->m5g_byte_stream&
+   {
+      insert(end(), bs.begin(), bs.end());
+      return *this;
+   }
    
-   
-   // // m5g_byte_stream& operator<<(std::nullptr_t n){
-   // //    stream << nil;
-   // //    return *this;
-   // // }
-   
-   // // m5g_byte_stream& operator<<(std::nullopt_t n){
-   // //    return *this << std::nullptr_t{};
-   // // }
-   
-   // m5g_byte_stream& operator<<(bool b){
-   //    stream << (b ? truo : falso);
-   //    return *this;
-   // }
-   
-   // m5g_byte_stream& operator<<(int64_t i){
-   //    if((i & neg_fixnum_data_mask) == i){
-   //       stream << int8_t(i | neg_fixnum_id);
-   //    }else if(int8_t(i) == i){
-   //       stream << int8 << int8_t(i);
-   //    }else if(int16_t(i) == i){
-   //       stream << int16 << int16_t(i);
-   //    }else if(int32_t(i) == i){
-   //       stream << int32 << int32_t(i);
-   //    }else{
-   //       stream << int64 << i;
-   //    }
-   //    return *this;
-   // }
-   
-   // m5g_byte_stream& operator<<(uint64_t u){
-   //    if((u & pos_fixnum_data_mask) == u){
-   //       stream << uint8_t(u | pos_fixnum_id);
-   //    }else if(uint8_t(u) == u){
-   //       stream << uint8 << uint8_t(u);
-   //    }else if(uint16_t(u) == u){
-   //       stream << uint16 << uint16_t(u);
-   //    }else if(uint32_t(u) == u){
-   //       stream << uint32 << uint32_t(u);
-   //    }else{
-   //       stream << uint64 << u;
-   //    }
-   //    return *this;
-   // }
-   
-   // m5g_byte_stream& operator<<(float f){
-   //    stream << float32 << f;
-   //    return *this;
-   // }
-   // m5g_byte_stream& operator<<(double f){
-   //    stream << float64 << f;
-   //    return *this;
-   // }
-   
-   // m5g_byte_stream& operator<<(std::string_view const& str){
-   //    auto size = str.size();
-   //    if(size == (size & fixstr_len_mask)){
-   //       stream << uint8_t(size | fixstr_id) << str;
-   //    }else if(uint8_t(size) == size){
-   //       stream << str8 << uint8_t(size) << str;
-   //    }else if(uint16_t(size) == size){
-   //       stream << str16 << uint16_t(size) << str;
-   //    }else if(uint32_t(size) == size){
-   //       stream << str32 << uint32_t(size) << str;
-   //    }
-   //    return *this;
-   // }
-   
-   // m5g_byte_stream& operator<<(byte_range const& bytes){
-   //    auto size = bytes.size();
-   //    if(uint8_t(size) == size){  //(bytes.size() <= UINT8_MAX){
-   //       stream << bin8 << uint8_t(size) << bytes;
-   //    }else if(uint16_t(size) == size){
-   //       stream << bin16 << uint16_t(size) << bytes;
-   //    }else if(uint32_t(size) == size){
-   //       stream << bin32 << uint32_t(size) << bytes;
-   //    }
-   //    return *this;
-   // }
-   
-   // template<class T>
-   // m5g_byte_stream& operator<<(std::array<T,3> const& arr){
-   //    auto size = arr.size();
-   //    if(size == (size & fixarr_len_mask)){
-   //       stream << uint8_t(size | fixarr_id) << arr;
-   //    // }else if(uint8_t(size) == size){
-   //    //    stream << str8 << uint8_t(size) << arr;
-   //    }else if(uint16_t(size) == size){
-   //       stream << str16 << uint16_t(size) << arr;
-   //    }else if(uint32_t(size) == size){
-   //       stream << str32 << uint32_t(size) << arr;
-   //    }
-   //    return *this;
-   // }
-   
-   // template<class T>
-   // m5g_byte_stream& operator<<(std::optional<T> const& o){
-   //    if(o.has_value()){
-   //       *this << *o;
-   //    }else{
-   //       stream << nil;
-   //    }
-   //    return *this;
-   // }
-   
+private:
+   struct detail_ /* : m5g_byte_stream */ {
+      m5g_byte_stream& mbs;
+      
+      template<typename T>
+      auto operator<<(T const& v) 
+      ->std::enable_if_t<std::is_arithmetic_v<T> 
+                        and not std::is_same_v<T,bool>, detail_& >
+      {
+       #if (BYTE_ORDER == LITTLE_ENDIAN) //C++20 if constexpr (std::endian::native == std::endian::little)
+         std::reverse_iterator<uint8_t*> first{(uint8_t *) (&v + 1)}, last{(uint8_t *) (&v)};
+       #else
+         uint8_t *first=(uint8_t*)&v, *last=(uint8_t*)(&v+1);
+       #endif
+         mbs.insert(mbs.end(), first, last);
+         return *this;
+      }
+      
+      detail_& operator<<(enum format ef){
+         return *this << (uint8_t)ef;
+      }
+      
+      detail_& operator<<(std::string const& s)
+      {
+         mbs.insert(mbs.end(), s.begin(), s.end());  // Alternative way: vec.reserve(vec.size()+sv.size()); for(auto&c:sv) vec<<c;
+         return *this;
+      }
+      
+      detail_& operator<<(m5g_value::bin_t const& b)
+      {
+         mbs.insert(mbs.end(), b.begin(), b.end());  // Alternative way: vec.reserve(vec.size()+sv.size()); for(auto&c:sv) vec<<c;
+         return *this;
+      }
+   };
+   detail_ detail() { return {*this}; }
+      
 }; //struct m5g_byte_stream
 
 

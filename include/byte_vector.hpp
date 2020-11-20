@@ -6,11 +6,13 @@
 // using byte_vector = std::vector<uint8_t>;
 struct byte_vector : std::vector<uint8_t> {
     using strsize_t = uint16_t;
-    // using std::vector<uint8_t>::std::vector<uint8_t>;
+    using std::vector<uint8_t>::vector;
 };
 
 template<typename T>
-inline auto operator<<(byte_vector&bv, T const& v) ->std::enable_if_t<std::is_arithmetic_v<T>, byte_vector& >
+inline auto operator<<(byte_vector&bv, T const& v) 
+->std::enable_if_t<std::is_arithmetic_v<T> 
+                   and not std::is_same_v<T,bool>, byte_vector& >
 {
     static_assert(std::is_arithmetic_v<T>,"operator<<(byte_vector&,T) implemented for arithmetic types only");
     //ToDo C++20 if constexpr (std::endian::native == std::endian::little)
