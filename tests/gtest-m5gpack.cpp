@@ -6,6 +6,13 @@ using namespace std;
 using namespace std::literals;
 // using namespace m5g;
 
+
+auto operator<<(ostream&os, m5g::stream const&ms) ->ostream&
+{
+   return os << byte_range_ascii(ms);
+}
+
+
 TEST(m5gpack,construction)
 {
    // 1. default constructable
@@ -305,5 +312,206 @@ TEST(m5gpack,stream_arr)
       EXPECT_EQ(ms.size()-5, a.size());
       EXPECT_EQ(ms[5], 0xC0);
       EXPECT_EQ(*--ms.end(), 0xc0);
+   }
+}
+
+TEST(m5gpack,stream_map)
+{
+   { /// fixmap stores a map whose length is upto 15 elements
+      m5g::stream ms;
+      m5g::map m(15);
+      ms << m;
+      EXPECT_EQ(ms[0], 0x80+m.size());
+      EXPECT_EQ(ms.size()-1, m.size()*2);
+      EXPECT_EQ(ms[1], 0xc0);
+      EXPECT_EQ(*--ms.end(), 0xc0);
+      
+      ms = {};
+      ms << m5g::map{};
+      EXPECT_EQ(ms[0], 0x80);
+      EXPECT_EQ(ms.size(), 1);
+   }
+   { /// map 16 stores a map whose length is upto (2^16)-1 elements
+      m5g::stream ms;
+      m5g::map m(16);
+      ms << m;
+      EXPECT_EQ(ms[0], 0xde);
+      EXPECT_EQ(ms[1], m.size()>>8);
+      EXPECT_EQ(ms[2], m.size()&0xFF);
+      EXPECT_EQ(ms.size()-3, m.size()*2);
+      EXPECT_EQ(ms[3], 0xc0);
+   }
+   { /// map 32 stores a map whose length is upto (2^32)-1 elements
+      m5g::stream ms;
+      m5g::map m(70000);
+      ms << m;
+      EXPECT_EQ(ms[0], 0xdf);
+      EXPECT_EQ(ms[1], m.size()>>24&0xFF);
+      EXPECT_EQ(ms[2], m.size()>>16&0xFF);
+      EXPECT_EQ(ms[3], m.size()>>8 &0xFF);
+      EXPECT_EQ(ms[4], m.size()>>0 &0xFF);
+      EXPECT_EQ(ms.size()-5, 2*m.size());
+      EXPECT_EQ(ms[5], 0xc0);
+      EXPECT_EQ(*--ms.end(), 0xc0);
+   }
+}
+
+TEST(m5gpack,stream_ext)
+{
+   { /// fixext 1 stores an integer and a byte array whose length is 1 byte
+      m5g::stream ms;
+      m5g::ext e {0xdf,byte_vector{0x17}};
+      ms << e;
+      EXPECT_EQ(ms[0], 0xd4);
+      EXPECT_EQ(ms[1], 0xdf);
+      EXPECT_EQ(*--ms.end(), 0x17);
+      EXPECT_EQ(ms.size(), 3);
+   }
+   { /// fixext 2
+      m5g::stream ms;
+      m5g::ext e {0xdf,byte_vector{0x17,0x18}};
+      ms << e;
+      EXPECT_EQ(ms[0], 0xd5);
+      EXPECT_EQ(ms[1], 0xdf);
+      EXPECT_EQ(*----ms.end(), 0x17);
+      EXPECT_EQ(*--ms.end(), 0x18);
+      EXPECT_EQ(ms.size(), 4);
+   }
+   { /// fixext 4
+      m5g::stream ms;
+      m5g::ext e {0xdf,byte_vector(4)};
+      ms << e;
+      EXPECT_EQ(ms[0], 0xd6);
+      EXPECT_EQ(ms[1], 0xdf);
+      EXPECT_EQ(ms.size(), 2+e.data.size());
+   }
+   { /// fixext 8
+      m5g::stream ms;
+      m5g::ext e {0xdf,byte_vector(8)};
+      ms << e;
+      EXPECT_EQ(ms[0], 0xd7);
+      EXPECT_EQ(ms[1], 0xdf);
+      EXPECT_EQ(ms.size(), 2+e.data.size());
+   }
+   { /// fixext 16
+      m5g::stream ms;
+      m5g::ext e {0xdf,byte_vector(16)};
+      ms << e;
+      EXPECT_EQ(ms[0], 0xd8);
+      EXPECT_EQ(ms[1], 0xdf);
+      EXPECT_EQ(ms.size(), 2+e.data.size());
+   }
+   { /// ext 8
+      m5g::stream ms;
+      m5g::ext e {0xdf,byte_vector(3)};
+      ms << e;
+      EXPECT_EQ(ms[0], 0xc7);
+      EXPECT_EQ(ms[1], e.data.size());
+      EXPECT_EQ(ms[2], 0xdf);
+      EXPECT_EQ(ms.size(), 3+e.data.size());
+      
+      ms={};
+      e = {0xde, byte_vector(12)};
+      ms << e;
+      EXPECT_EQ(ms[0], 0xc7);
+      EXPECT_EQ(ms[1], e.data.size());
+      EXPECT_EQ(ms[2], 0xde);
+      EXPECT_EQ(ms.size(), 3+e.data.size());
+      
+      ms={};
+      e = {0xdd, byte_vector(144)};
+      ms << e;
+      EXPECT_EQ(ms[0], 0xc7);
+      EXPECT_EQ(ms[1], e.data.size());
+      EXPECT_EQ(ms[2], 0xdd);
+      EXPECT_EQ(ms.size(), 3+e.data.size());
+   }
+   { /// ext 16
+      m5g::stream ms;
+      m5g::ext e {0xdf,byte_vector(256)};
+      ms << e;
+      EXPECT_EQ(ms[0], 0xc8);
+      EXPECT_EQ(ms[1], e.data.size()>>8);
+      EXPECT_EQ(ms[2], e.data.size()&0xFF);
+      EXPECT_EQ(ms[3], 0xdf);
+      EXPECT_EQ(ms.size(), 4+e.data.size());
+      
+      ms={};
+      e = {0xde, byte_vector(1000)};
+      ms << e;
+      EXPECT_EQ(ms[0], 0xc8);
+      EXPECT_EQ(ms[1], e.data.size()>>8);
+      EXPECT_EQ(ms[2], e.data.size()&0xFF);
+      EXPECT_EQ(ms[3], 0xde);
+      EXPECT_EQ(ms.size(), 4+e.data.size());
+      
+      ms={};
+      e = {0xdd, byte_vector(65535)};
+      ms << e;
+      EXPECT_EQ(ms[0], 0xc8);
+      EXPECT_EQ(ms[1], e.data.size()>>8);
+      EXPECT_EQ(ms[2], e.data.size()&0xFF);
+      EXPECT_EQ(ms[3], 0xdd);
+      EXPECT_EQ(ms.size(), 4+e.data.size());
+   }
+   { /// ext 32
+      m5g::stream ms;
+      m5g::ext e {0xdf,byte_vector(65536)};
+      ms << e;
+      EXPECT_EQ(ms[0], 0xc9);
+      EXPECT_EQ(ms[1], e.data.size()>>24&0xFF);
+      EXPECT_EQ(ms[2], e.data.size()>>16&0xFF);
+      EXPECT_EQ(ms[3], e.data.size()>>8 &0xFF);
+      EXPECT_EQ(ms[4], e.data.size()>>0 &0xFF);
+      EXPECT_EQ(ms[5], 0xdf);
+      EXPECT_EQ(ms.size(), 6+e.data.size());
+   }
+}
+
+TEST(m5gpack,stream_time)
+{
+   using namespace std::chrono;
+   using namespace std::chrono_literals;
+   /// timestamp 32 stores the number of seconds that have elapsed since 1970-01-01 00:00:00 UTC
+   {
+      m5g::stream ms;
+      m5g::timestamp t = 1605949189s;
+      // ASSERT_EQ(duration_cast<seconds>(t).count(),1605949189);
+      // ASSERT_EQ(duration_cast<nanoseconds>(t).count(),0);
+      ms << t;
+      EXPECT_EQ(ms[0], 0xd6);
+      EXPECT_EQ(ms[1], (uint8_t)-1);
+      EXPECT_EQ(ms[2], 1605949189>>24&0xFF);
+      EXPECT_EQ(ms[3], 1605949189>>16&0xFF);
+      EXPECT_EQ(ms[4], 1605949189>>8 &0xFF);
+      EXPECT_EQ(ms[5], 1605949189>>0 &0xFF);
+      EXPECT_EQ(ms.size(), 6);
+   }
+   {/// timestamp 64 stores the number of seconds and nanoseconds that have elapsed since 1970-01-01 00:00:00 UTC
+      m5g::stream ms;
+      m5g::timestamp t = 1605949189s + 123'456'789ns;
+      ms << t;
+      EXPECT_EQ(ms[0], 0xd7);
+      EXPECT_EQ(ms[1], (uint8_t)-1);
+      EXPECT_EQ(ms[2], 0x1d);
+      EXPECT_EQ(ms[3], 0x6f);
+      EXPECT_EQ(ms[4], 0x34);
+      EXPECT_EQ(ms[5], 0x54);
+      EXPECT_EQ(ms[6], 0x5f);
+      EXPECT_EQ(ms[7], 0xb8);
+      EXPECT_EQ(ms[8], 0xd7);
+      EXPECT_EQ(ms[9], 0x05);
+      EXPECT_EQ(ms.size()-2, sizeof(uint64_t));
+   }
+   {/// timestamp 96 stores the number of seconds and nanoseconds that have elapsed since 1970-01-01 00:00:00 UTC
+      m5g::stream ms;
+      m5g::timestamp t = 98761605949189s + 123'456'789ns;
+      ms << t;
+      EXPECT_EQ(ms[0], 0xc7);
+      EXPECT_EQ(ms[1], 12);
+      EXPECT_EQ(ms[2], (uint8_t)-1);
+      EXPECT_EQ(ms[3], 0xcf);
+      EXPECT_EQ(*--ms.end(), 0xf5);
+      EXPECT_EQ(ms.size(), 3+12);
    }
 }

@@ -164,7 +164,7 @@ struct m5g_value
       }, val.var);
       return os;
    }
-};
+}; //m5g_value
 
 
 /*
@@ -428,7 +428,7 @@ struct m5g_byte_stream : std::vector<uint8_t>
             else if(size == 16)
                detail() << fixext16;
             else if(uint8_t(size) == size)
-               detail() << ext8 << uint16_t(size);
+               detail() << ext8 << uint8_t(size);
             else if(uint16_t(size) == size)
                detail() << ext16 << uint16_t(size);
             else if(uint32_t(size) == size)
@@ -440,13 +440,15 @@ struct m5g_byte_stream : std::vector<uint8_t>
          [&](m5g_value::time_t const& t){
             using namespace std::chrono;
             auto sec  = uint64_t(duration_cast<seconds>(t).count());
-            auto nsec = uint64_t(duration_cast<nanoseconds>(t).count());
-            if (sec <= UINT32_MAX){
+            auto purenanosec = t - duration_cast<seconds>(t);
+            auto nsec = uint64_t(duration_cast<nanoseconds>(purenanosec).count());
+            if (sec <= UINT32_MAX and nsec == 0){
                detail() << timestamp32 << char(-1) << uint32_t(sec);
             }else if (sec <= 0x3'FFFF'FFFFu){
                detail() << timestamp64 << char(-1) << ((nsec << 34)|sec);
             }else{
-               detail() << timestamp96 << char(12) << char(-1) << uint32_t(nsec) << sec;
+               detail() << timestamp96 << uint8_t(12)
+                        << char(-1) << uint32_t(nsec) << sec;
             }
          }
       },val.var);
@@ -507,6 +509,8 @@ namespace m5g {
    using array = m5g_value::array_t;
    using arr   = m5g_value::array_t;
    using map   = m5g_value::map_t;
+   using ext   = m5g_value::ext_t;
+   using timestamp = m5g_value::time_t;
    //using map = m5g_map;
    //using string = m5g_string;
    using stream = m5g_byte_stream;

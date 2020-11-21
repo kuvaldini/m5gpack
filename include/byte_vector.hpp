@@ -7,6 +7,7 @@
 struct byte_vector : std::vector<uint8_t> {
     using strsize_t = uint16_t;
     using std::vector<uint8_t>::vector;
+    auto operator<=>(const byte_vector&) const = default;
 };
 
 template<typename T>
