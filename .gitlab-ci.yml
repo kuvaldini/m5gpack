@@ -1,6 +1,6 @@
 ## Documentation https://docs.gitlab.com/ee/ci/yaml/
 
-image: registry.gitlab.com/kyb/byte_vector
+image: registry.gitlab.com/kyb/m5gpack
 
 stages:
 - prepare
@@ -65,22 +65,22 @@ build_and_test:
   ## -------- BUILD --------
   - cmake -B build -DBUILD_TESTING=ON
   - cmake --build build -- -j #VERBOSE=1
-  #- cmake --build build --target byte_vector_amalgamate
+  #- cmake --build build --target m5gpack_amalgamate
   ## -------- TEST --------
   - cmake --build build --target test  #- ( cd build && ctest; )
-  - ./build/byte_vector-demo
+  - ./build/temp_test
   ## -------- PREPARE ARTIFACTS -------
-  - ln -f build/{rev_label,byte_vector.hh} -t.
+  # - ln -f build/{rev_label,m5gpack.hh} -t.
   - git log -1 --format=%B >commit_message
   artifacts:
     paths:
-    - "byte_vector.hh"
-    - "rev_label"
+    # - "m5gpack.hh"
+    # - "rev_label"
     - "commit_message"
 
 
 ## --- STORE ARTIFACTS TO A DEDICATED BRANCH ---
-store_artifacts:
+.store_artifacts:
   stage: deploy
   extends: .runner_tags_docker
   only:
@@ -93,7 +93,7 @@ store_artifacts:
   # - tags
   dependencies: 
   - build_and_test
-  image: registry.gitlab.com/kyb/byte_vector #/git-ubuntu
+  image: registry.gitlab.com/kyb/m5gpack #/git-ubuntu
   variables:
     GIT_STRATEGY: none
   script:
@@ -106,18 +106,18 @@ store_artifacts:
   - SSH_URL=$(echo "$CI_REPOSITORY_URL" | perl -pe 's#https://(.+?):(.+?)@(.+?)/(.+?).git#git@\3:\4.git#' )
   ## ---------- CLONE, ADD and COMMIT ---------------
   - git clone "$SSH_URL" --depth 1 --single-branch -b artifacts/$CI_COMMIT_REF_NAME ./artifacts  ||  { git init artifacts && git -C artifacts checkout --orphan artifacts/$CI_COMMIT_REF_NAME; }
-  - echo >README.md.new  "## byte_vector $REV_LABEL"
-  - ln byte_vector.hh artifacts/byte_vector-$REV_LABEL.hh
-  - echo >>README.md.new "[byte_vector-$REV_LABEL.hh](byte_vector-$REV_LABEL.hh)  "
+  - echo >README.md.new  "## m5gpack $REV_LABEL"
+  # - ln m5gpack.hh artifacts/m5gpack-$REV_LABEL.hh
+  - echo >>README.md.new "[m5gpack-$REV_LABEL.hh](m5gpack-$REV_LABEL.hh)  "
   - echo >>README.md.new -e "\n## Changelog\n$(cat commit_message)\n\n---\n"
   - cat  >>README.md.new artifacts/README.md  || true
   - mv     README.md.new artifacts/README.md
   - cd artifacts
-  - ln -sf byte_vector-$REV_LABEL.hh byte_vector.hh
+  - ln -sf m5gpack-$REV_LABEL.hh m5gpack.hh
   - git add .
   - DEBUG git status 
-  - git config --global user.email "ci@byte_vector.c++"
-  - git config --global user.name "byte_vector GitLab CI"
+  - git config --global user.email "ci@m5gpack.c++"
+  - git config --global user.name "m5gpack GitLab CI"
   - git commit -m"$REV_LABEL
     
     $(cat commit_message)
@@ -188,7 +188,7 @@ releases_page:
   - echo -e $'\e[1;37m' "$REV_LABEL" $'\e[0m'
   - function name_url { for x; do echo $COMMA'{"name":"'"$x"'","url":"'"$CI_PROJECT_URL/raw/artifacts/$CI_COMMIT_REF_NAME/$x"'"}'; COMMA=, ;done; }
   - description="$(cat commit_message)"
-  - description="$description\n\n### [byte_vector-$REV_LABEL.hh]($CI_PROJECT_URL/raw/artifacts/$CI_COMMIT_REF_NAME/byte_vector-$REV_LABEL.hh)"
+  - description="$description\n\n### [m5gpack-$REV_LABEL.hh]($CI_PROJECT_URL/raw/artifacts/$CI_COMMIT_REF_NAME/m5gpack-$REV_LABEL.hh)"
   - description="${description//$'\n'/\\n}"
   - DEBUG echo "$description"
   - >
@@ -203,7 +203,7 @@ releases_page:
             "name": "Artifacts branch",
             "url": "'"$CI_PROJECT_URL/tree/artifacts/$CI_COMMIT_REF_NAME"'"
           },'"
-          $(name_url byte_vector-$REV_LABEL.hh)
+          $(name_url m5gpack-$REV_LABEL.hh)
         ]
       }
     }"
