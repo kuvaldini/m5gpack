@@ -1,6 +1,8 @@
 #include <sstream>
 #include "gtest/gtest.h"
 #include "m5gpack.hpp"
+#include "byte_range_ascii.hpp"
+#include "byte_vector.hpp"
 
 using namespace std;
 using namespace std::literals;
@@ -51,30 +53,16 @@ TEST(m5gpack,construction)
                        {2,54.3},
                        {0.9,21.3},
                      };
-   
-   
-   
-   // m5g_value;
-   // m5g_array;
-   // m5g_map;
-   // m5g_string;
-   // m5g_bin;
-   // m5g_blob;
-   
-   // m5g::value;
-   // m5g::array;
-   // m5g::map;
-   // m5g::string;
 }
 
-/// nil < boolean < (signed int, unsigned int, float) < str < bin < arr < map < ext < time
-TEST(m5gpack,compare_less)
+/// nil < boolean < (signed int, unsigned int, float, double) < str < bin < arr < map < ext < time
+TEST(m5gpack,compare)
 {
    EXPECT_LT(m5g::value{} , false);
    EXPECT_LT(m5g::value{false} , true);
    EXPECT_LT(m5g::value{true} , int(-1));
    EXPECT_LT(m5g::value{int(-1)} , 2);
-   EXPECT_LT(m5g::value{2} , double(3.14));
+   EXPECT_LT(m5g::value{2} , double(3.14));  // numbers are compared as numbers type does not matter
    EXPECT_LT(m5g::value{3.14} , "hello"s);
    EXPECT_LT(m5g::value{"hello"} , m5g::value{"helly"});
    EXPECT_LT(m5g::value{"hello"} , (m5g::array{1,"222"}));
@@ -84,24 +72,18 @@ TEST(m5gpack,compare_less)
    EXPECT_LT((m5g::value{m5g::map{{1,"a"}}}) , (m5g::map{{2,"a"}}));
    EXPECT_LT((m5g::value{m5g::map{{1,"a"}}}) , (m5g::map{{1,"a"},{}}));
    
-   using namespace m5gpack;
-   EXPECT_LT(m5gval{} , false);
-   EXPECT_LT(m5gval{false}, m5gval{3});
-   EXPECT_LT(m5g::value{-2} , -1);
-   EXPECT_LT(m5g::value{} , 2);
-   
-   // array
-   // EXPECT_EQ(m5garr{1,2,3} , m5garr{1,2,3});
-   // EXPECT_EQ(m5garr{1,2} , m5garr{1,2,3});
-   // EXPECT_LT(m5garr{1,2,3} , m5garr{1,2,4});
-   // EXPECT_LT(m5gval{} , false);
-}
-
-TEST(m5gpack,compare_equal)
-{
+   EXPECT_EQ(m5g::value{} , m5g::nil);
    EXPECT_EQ(m5g::value{true} , true);
    EXPECT_EQ(m5g::value{int(2)} , 2.);
    EXPECT_EQ(m5g::value{int(2)} , 2ul);
+   
+   EXPECT_EQ(m5g::value{"hello"}, "hello");
+   EXPECT_NE(m5g::value{"hello"}, "Hello");
+   
+   EXPECT_EQ(m5g::ext{}, m5g::ext{});
+   EXPECT_EQ(m5g::ext(1,{'w','o'}), (m5g::value{m5g::ext{1,{'w','o'}}}));
+   EXPECT_NE(m5g::value{}, (m5g::value{m5g::ext{1,{'w','o'}}}));
+   EXPECT_NE(m5g::nil, (m5g::value{m5g::ext{0xdf,m5g::bin{0x17}}}));
 }
 
 
@@ -110,12 +92,17 @@ TEST(m5gpack,stream_common)
    // empty types
    {
       m5g::stream ms;
-      ms << m5g::value{m5g::map{
+      auto val = m5g::value{m5g::map{
                {},
                {"", m5g::arr{}},
       }};
+      ms << val;
       byte_vector expected {0x82,0xC0,0xC0,0xA0,0x90};
       EXPECT_EQ(ms,expected);
+      
+      m5g::value received;
+      ms >> received;
+      EXPECT_EQ(received,val);
    }
    
    // a map of different types
@@ -149,23 +136,45 @@ TEST(m5gpack,stream_common)
       EXPECT_EQ(ms,expected);
    }
 }
-TEST(m5gpack,stream_int)
+TEST(m5gpack,stream_number)
 {
    // nil
    m5g::stream ms;
    ms << m5g::value(m5g::nil);
    EXPECT_EQ(ms,(byte_vector{0xc0}));
+   m5g::value recved;
+   ms >> recved;
+   EXPECT_EQ(recved,m5g::nil);
    
    // bool
-   ms = {};
    ms << false << true;
    EXPECT_EQ(ms,(byte_vector{0xc2,0xc3}));
+   m5g::value recv_f, recv_t;
+   ms >> recv_f >> recv_t;
+   EXPECT_EQ(recv_f,false);
+   EXPECT_EQ(recv_t,true);
+   // EXPECT_FALSE(recv_f);
+   // EXPECT_TRUE(recv_t);
    
    // uint
-   ms = {};
    ms << 0u << 127u << 255u << unsigned(65535) << uint64_t(0x1234ABCD) << UINT64_MAX;
    EXPECT_EQ(ms,(byte_vector{0x00,0x7F,0xcc,0xFF,0xcd,0xFF,0xFF,0xce,0x12,0x34,0xAB,0xCD,
                               0xcf,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF}));
+   // uint deserialize
+   m5g::value recv;
+   ms >> recv;
+   EXPECT_EQ(recv,0u);
+   ms >> recv;
+   EXPECT_EQ(recv,127u);
+   ms >> recv;
+   EXPECT_EQ(recv,255u);
+   ms >> recv;
+   EXPECT_EQ(recv,65535);
+   ms >> recv;
+   EXPECT_EQ(recv,0x1234ABCD);
+   ms >> recv;
+   EXPECT_EQ(recv,UINT64_MAX);
+   EXPECT_TRUE(ms.empty());
    
    // int
    ms = {};
@@ -191,20 +200,29 @@ TEST(m5gpack,stream_int)
    EXPECT_EQ(ms,(m5g::stream{0xcb,0,0,0,0,0,0,0,0,
       0xcb,0xBF,0xF0,0x00,0x00,0x00,0x00,0x00,0x00,
       0xcb,0x40,0x09,0x21,0xfb,0x4d,0x12,0xd8,0x4a}));
-   
-   // fixstr
-   ms = {};
-   ms << "" << "Hello";
-   EXPECT_EQ(ms,(m5g::stream{0xa0, 0xa5,'H','e','l','l','o'}));
 }
 TEST(m5gpack,stream_str)
 {
-   { // fixstr max size
+   { // fixstr
+      m5g::stream ms;
+      ms << "" << "Hello";
+      EXPECT_EQ(ms,(m5g::stream{0xa0, 0xa5,'H','e','l','l','o'}));
+      // deserialize
+      m5g_value empty,hello;
+      ms >> empty >> hello;
+      EXPECT_TRUE(std::get<std::string>(empty.var).empty());
+      EXPECT_EQ(hello,"Hello");
+   }
+   { // fixstr max size 15
       m5g::stream ms;
       ms << "1234567890qwertyuiopasdfghjklzx";
       EXPECT_EQ(ms[0], 0xBF);
       EXPECT_EQ(ms[1], '1');
       EXPECT_EQ(*--ms.end(), 'x');
+      // deserialize
+      m5g_value str;
+      ms >> str;
+      EXPECT_EQ(str,"1234567890qwertyuiopasdfghjklzx");
    }
    { // str 8
       m5g::stream ms;
@@ -213,6 +231,10 @@ TEST(m5gpack,stream_str)
       EXPECT_EQ(ms[1], 32);
       EXPECT_EQ(ms[2], '1');
       EXPECT_EQ(*--ms.end(), 'c');
+      // deserialize
+      m5g_value str;
+      ms >> str;
+      EXPECT_EQ(str,"1234567890qwertyuiopasdfghjklzxc");
    }
    { // str 16
       m5g::stream ms;
@@ -225,6 +247,10 @@ TEST(m5gpack,stream_str)
       EXPECT_EQ(ms[2], s.size()&0xFF);
       EXPECT_EQ(ms[3], '1');
       EXPECT_EQ(*--ms.end(), 'c');
+      // deserialize
+      m5g_value str;
+      ms >> str;
+      EXPECT_EQ(str,s);
    }
    { // str 32
       m5g::stream ms;
@@ -239,6 +265,10 @@ TEST(m5gpack,stream_str)
       EXPECT_EQ(ms[4], s.size()>>0 &0xFF);
       EXPECT_EQ(ms[5], '1');
       EXPECT_EQ(*--ms.end(), 'c');
+      // deserialize
+      m5g_value str;
+      ms >> str;
+      EXPECT_EQ(str,s);
    }
 }
 
@@ -253,6 +283,10 @@ TEST(m5gpack,stream_bin)
       EXPECT_EQ(ms[1], b.size());
       EXPECT_EQ(ms[2], 0);
       EXPECT_EQ(*--ms.end(), b.size()-1);
+      // deserialize
+      m5g_value binval;
+      ms >> binval;
+      EXPECT_EQ(binval,b);
    }
    { // bin 16
       m5g::stream ms;
@@ -264,6 +298,10 @@ TEST(m5gpack,stream_bin)
       EXPECT_EQ(ms[2], b.size()&0xFF);
       EXPECT_EQ(ms[3], 0);
       EXPECT_EQ(*--ms.end(), *--b.end());
+      // deserialize
+      m5g_value binval;
+      ms >> binval;
+      EXPECT_EQ(binval,b);
    }
    { // bin 32
       m5g::stream ms;
@@ -277,6 +315,10 @@ TEST(m5gpack,stream_bin)
       EXPECT_EQ(ms[4], b.size()>>0 &0xFF);
       EXPECT_EQ(ms[5], 0);
       EXPECT_EQ(*--ms.end(), *--b.end());
+      // deserialize
+      m5g_value binval;
+      ms >> binval;
+      EXPECT_EQ(binval,b);
    }
 }
 
@@ -289,6 +331,10 @@ TEST(m5gpack,stream_arr)
       EXPECT_EQ(ms[0], 0x90+a.size());
       EXPECT_EQ(ms[1], 0xc0);
       EXPECT_EQ(*--ms.end(), 0xc0);
+      // deserialize
+      m5g_value val;
+      ms >> val;
+      EXPECT_EQ(val,a);
    }
    { /// array 16 stores an array whose length is upto (2^16)-1 elements
       m5g::stream ms;
@@ -299,6 +345,10 @@ TEST(m5gpack,stream_arr)
       EXPECT_EQ(ms[2], a.size()&0xFF);
       EXPECT_EQ(ms.size()-3, a.size());
       EXPECT_EQ(ms[3], 0xc0);
+      // deserialize
+      m5g_value val;
+      ms >> val;
+      EXPECT_EQ(val,a);
    }
    { /// array 32 stores an array whose length is upto (2^32)-1 elements
       m5g::stream ms;
@@ -312,6 +362,10 @@ TEST(m5gpack,stream_arr)
       EXPECT_EQ(ms.size()-5, a.size());
       EXPECT_EQ(ms[5], 0xC0);
       EXPECT_EQ(*--ms.end(), 0xc0);
+      // deserialize
+      m5g_value val;
+      ms >> val;
+      EXPECT_EQ(val,a);
    }
 }
 
@@ -325,11 +379,18 @@ TEST(m5gpack,stream_map)
       EXPECT_EQ(ms.size()-1, m.size()*2);
       EXPECT_EQ(ms[1], 0xc0);
       EXPECT_EQ(*--ms.end(), 0xc0);
+      // deserialize
+      m5g_value val;
+      ms >> val;
+      EXPECT_EQ(val,m);
       
       ms = {};
       ms << m5g::map{};
       EXPECT_EQ(ms[0], 0x80);
       EXPECT_EQ(ms.size(), 1);
+      // deserialize
+      ms >> val;
+      EXPECT_EQ(val,m5g::map{});
    }
    { /// map 16 stores a map whose length is upto (2^16)-1 elements
       m5g::stream ms;
@@ -340,6 +401,10 @@ TEST(m5gpack,stream_map)
       EXPECT_EQ(ms[2], m.size()&0xFF);
       EXPECT_EQ(ms.size()-3, m.size()*2);
       EXPECT_EQ(ms[3], 0xc0);
+      // deserialize
+      m5g_value val;
+      ms >> val;
+      EXPECT_EQ(val,m);
    }
    { /// map 32 stores a map whose length is upto (2^32)-1 elements
       m5g::stream ms;
@@ -353,6 +418,10 @@ TEST(m5gpack,stream_map)
       EXPECT_EQ(ms.size()-5, 2*m.size());
       EXPECT_EQ(ms[5], 0xc0);
       EXPECT_EQ(*--ms.end(), 0xc0);
+      // deserialize
+      m5g_value val;
+      ms >> val;
+      EXPECT_EQ(val,m);
    }
 }
 
@@ -360,103 +429,144 @@ TEST(m5gpack,stream_ext)
 {
    { /// fixext 1 stores an integer and a byte array whose length is 1 byte
       m5g::stream ms;
-      m5g::ext e {0xdf,byte_vector{0x17}};
+      m5g::ext e {0xdf,m5g::bin{0x17}};
       ms << e;
       EXPECT_EQ(ms[0], 0xd4);
       EXPECT_EQ(ms[1], 0xdf);
       EXPECT_EQ(*--ms.end(), 0x17);
       EXPECT_EQ(ms.size(), 3);
+      // deserialize
+      m5g_value val;
+      ms >> val;
+      // EXPECT_EQ(m5g::value(m5g::ext{}),0);
+      EXPECT_TRUE(val == e); //SIGSEGV EXPECT_EQ(m5g::value(m5g::nil),m5g::value(e));
    }
    { /// fixext 2
       m5g::stream ms;
-      m5g::ext e {0xdf,byte_vector{0x17,0x18}};
+      m5g::ext e {0xdf,m5g::bin{0x17,0x18}};
       ms << e;
       EXPECT_EQ(ms[0], 0xd5);
       EXPECT_EQ(ms[1], 0xdf);
       EXPECT_EQ(*----ms.end(), 0x17);
       EXPECT_EQ(*--ms.end(), 0x18);
       EXPECT_EQ(ms.size(), 4);
+      // deserialize
+      m5g_value val;
+      ms >> val;
+      EXPECT_TRUE(val == e); //SIGSEGV EXPECT_EQ(val,e);
    }
    { /// fixext 4
       m5g::stream ms;
-      m5g::ext e {0xdf,byte_vector(4)};
+      m5g::ext e {0xdf,m5g::bin(4)};
       ms << e;
       EXPECT_EQ(ms[0], 0xd6);
       EXPECT_EQ(ms[1], 0xdf);
       EXPECT_EQ(ms.size(), 2+e.data.size());
+      // deserialize
+      m5g_value val;
+      ms >> val;
+      EXPECT_TRUE(val == e); //SIGSEGV EXPECT_EQ(val,e);
    }
    { /// fixext 8
       m5g::stream ms;
-      m5g::ext e {0xdf,byte_vector(8)};
+      m5g::ext e {0xdf,m5g::bin(8)};
       ms << e;
       EXPECT_EQ(ms[0], 0xd7);
       EXPECT_EQ(ms[1], 0xdf);
       EXPECT_EQ(ms.size(), 2+e.data.size());
+      // deserialize
+      m5g_value val;
+      ms >> val;
+      EXPECT_TRUE(val == e); //SIGSEGV EXPECT_EQ(val,e);
    }
    { /// fixext 16
       m5g::stream ms;
-      m5g::ext e {0xdf,byte_vector(16)};
+      m5g::ext e {0xdf,m5g::bin(16)};
       ms << e;
       EXPECT_EQ(ms[0], 0xd8);
       EXPECT_EQ(ms[1], 0xdf);
       EXPECT_EQ(ms.size(), 2+e.data.size());
+      // deserialize
+      m5g_value val;
+      ms >> val;
+      EXPECT_TRUE(val == e); //SIGSEGV EXPECT_EQ(val,e);
    }
    { /// ext 8
       m5g::stream ms;
-      m5g::ext e {0xdf,byte_vector(3)};
+      m5g::ext e {0xdf,m5g::bin(3)};
       ms << e;
       EXPECT_EQ(ms[0], 0xc7);
       EXPECT_EQ(ms[1], e.data.size());
       EXPECT_EQ(ms[2], 0xdf);
       EXPECT_EQ(ms.size(), 3+e.data.size());
+      // deserialize
+      m5g_value val;
+      ms >> val;
+      EXPECT_TRUE(val == e); //SIGSEGV EXPECT_EQ(val,e);
       
       ms={};
-      e = {0xde, byte_vector(12)};
+      e = {0xde, m5g::bin(12)};
       ms << e;
       EXPECT_EQ(ms[0], 0xc7);
       EXPECT_EQ(ms[1], e.data.size());
       EXPECT_EQ(ms[2], 0xde);
       EXPECT_EQ(ms.size(), 3+e.data.size());
+      // deserialize
+      ms >> val;
+      EXPECT_TRUE(val == e); //SIGSEGV EXPECT_EQ(val,e);
       
       ms={};
-      e = {0xdd, byte_vector(144)};
+      e = {0xdd, m5g::bin(144)};
       ms << e;
       EXPECT_EQ(ms[0], 0xc7);
       EXPECT_EQ(ms[1], e.data.size());
       EXPECT_EQ(ms[2], 0xdd);
       EXPECT_EQ(ms.size(), 3+e.data.size());
+      // deserialize
+      ms >> val;
+      EXPECT_TRUE(val == e); //SIGSEGV EXPECT_EQ(val,e);
    }
    { /// ext 16
       m5g::stream ms;
-      m5g::ext e {0xdf,byte_vector(256)};
+      m5g::ext e {0xdf,m5g::bin(256)};
       ms << e;
       EXPECT_EQ(ms[0], 0xc8);
       EXPECT_EQ(ms[1], e.data.size()>>8);
       EXPECT_EQ(ms[2], e.data.size()&0xFF);
       EXPECT_EQ(ms[3], 0xdf);
       EXPECT_EQ(ms.size(), 4+e.data.size());
+      // deserialize
+      m5g_value val;
+      ms >> val;
+      EXPECT_TRUE(val == e); //SIGSEGV EXPECT_EQ(val,e);
       
       ms={};
-      e = {0xde, byte_vector(1000)};
+      e = {0xde, m5g::bin(1000)};
       ms << e;
       EXPECT_EQ(ms[0], 0xc8);
       EXPECT_EQ(ms[1], e.data.size()>>8);
       EXPECT_EQ(ms[2], e.data.size()&0xFF);
       EXPECT_EQ(ms[3], 0xde);
       EXPECT_EQ(ms.size(), 4+e.data.size());
+      // deserialize
+      ms >> val;
+      EXPECT_TRUE(val == e); //SIGSEGV EXPECT_EQ(val,e);
       
       ms={};
-      e = {0xdd, byte_vector(65535)};
+      e = {0xdd, m5g::bin(65535)};
       ms << e;
       EXPECT_EQ(ms[0], 0xc8);
       EXPECT_EQ(ms[1], e.data.size()>>8);
       EXPECT_EQ(ms[2], e.data.size()&0xFF);
       EXPECT_EQ(ms[3], 0xdd);
       EXPECT_EQ(ms.size(), 4+e.data.size());
+      // deserialize
+      ms >> val;
+      EXPECT_TRUE(val == e); //SIGSEGV EXPECT_EQ(val,e);
    }
    { /// ext 32
       m5g::stream ms;
-      m5g::ext e {0xdf,byte_vector(65536)};
+      m5g::ext e {0xdf,m5g::bin(65536)};
       ms << e;
       EXPECT_EQ(ms[0], 0xc9);
       EXPECT_EQ(ms[1], e.data.size()>>24&0xFF);
@@ -465,6 +575,10 @@ TEST(m5gpack,stream_ext)
       EXPECT_EQ(ms[4], e.data.size()>>0 &0xFF);
       EXPECT_EQ(ms[5], 0xdf);
       EXPECT_EQ(ms.size(), 6+e.data.size());
+      // deserialize
+      m5g_value val;
+      ms >> val;
+      EXPECT_TRUE(val == e); //SIGSEGV EXPECT_EQ(val,e);
    }
 }
 
@@ -486,10 +600,14 @@ TEST(m5gpack,stream_time)
       EXPECT_EQ(ms[4], 1605949189>>8 &0xFF);
       EXPECT_EQ(ms[5], 1605949189>>0 &0xFF);
       EXPECT_EQ(ms.size(), 6);
+      // deserialize
+      m5g_value val;
+      ms >> val;
+      EXPECT_TRUE(val == t); // EXPECT_EQ(val,t);
    }
    {/// timestamp 64 stores the number of seconds and nanoseconds that have elapsed since 1970-01-01 00:00:00 UTC
       m5g::stream ms;
-      m5g::timestamp t = 1605949189s + 123'456'789ns;
+      m5g::timestamp t {1605949189s,123'456'789ns};
       ms << t;
       EXPECT_EQ(ms[0], 0xd7);
       EXPECT_EQ(ms[1], (uint8_t)-1);
@@ -502,16 +620,24 @@ TEST(m5gpack,stream_time)
       EXPECT_EQ(ms[8], 0xd7);
       EXPECT_EQ(ms[9], 0x05);
       EXPECT_EQ(ms.size()-2, sizeof(uint64_t));
+      // deserialize
+      m5g_value val;
+      ms >> val;
+      EXPECT_TRUE(val == t); // EXPECT_EQ(val,t);
    }
    {/// timestamp 96 stores the number of seconds and nanoseconds that have elapsed since 1970-01-01 00:00:00 UTC
       m5g::stream ms;
-      m5g::timestamp t = 98761605949189s + 123'456'789ns;
+      m5g::timestamp t{98761605949189s, 123'456'789ns};
       ms << t;
       EXPECT_EQ(ms[0], 0xc7);
       EXPECT_EQ(ms[1], 12);
       EXPECT_EQ(ms[2], (uint8_t)-1);
-      EXPECT_EQ(ms[3], 0xcf);
-      EXPECT_EQ(*--ms.end(), 0xf5);
+      EXPECT_EQ(ms[3], 0x07);
+      EXPECT_EQ(*--ms.end(), 0x05);
       EXPECT_EQ(ms.size(), 3+12);
+      // deserialize
+      m5g_value val;
+      ms >> val;
+      EXPECT_TRUE(val == t); // EXPECT_EQ(val,t);
    }
 }

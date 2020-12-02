@@ -15,6 +15,7 @@ add_subdirectory(googletest)
 
 add_executable(gtest-m5gpack gtest-m5gpack.cpp)
 target_compile_features(gtest-m5gpack PRIVATE cxx_std_20)
+target_compile_options(gtest-m5gpack PRIVATE -Wall -Wextra -pedantic)
 target_link_libraries(gtest-m5gpack PRIVATE gtest_main gtest m5gpack)
 add_test(NAME gtest-m5gpack COMMAND gtest-m5gpack)
 

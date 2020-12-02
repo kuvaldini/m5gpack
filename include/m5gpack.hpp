@@ -14,10 +14,8 @@
 #include <iostream>
 #include <iomanip>
 #include <type_traits>
+// #include <format>  //todo
 
-#include "byte_vector.hpp"
-#include "byte_range.hpp"
-#include "byte_range_ascii.hpp"
 #include "byte_range_hex.hpp"
 
 
@@ -45,7 +43,10 @@ struct m5g_value
    };
    static constexpr nil_t nil{};
 
-   using bin_t = byte_vector;
+   // using bin_t = byte_vector;
+   struct bin_t : std::vector<uint8_t>{ //declare struct instead of using type directly for better compile-time messages
+      using std::vector<uint8_t>::vector;
+   };
    using blob_t = bin_t;
    
    struct array_t : std::vector<m5g_value>{ //declare struct instead of using type directly for better compile-time messages
@@ -59,12 +60,28 @@ struct m5g_value
    
    struct ext_t{
       uint8_t type;
-      byte_vector data;
+      bin_t data;
       auto operator<=>(const ext_t&) const = default;
    };
    
-   using time_t =  std::chrono::nanoseconds;
-   
+   struct time_t {
+      using seconds = std::chrono::seconds;
+      using nanoseconds = std::chrono::nanoseconds;
+      std::chrono::seconds sec{0};
+      std::chrono::nanoseconds ns{0};
+      constexpr auto operator<=>(time_t const&)const = default;
+      constexpr time_t() = default;
+      constexpr time_t(time_t const&) = default;
+      constexpr time_t(time_t&&) = default;
+      constexpr time_t& operator=(time_t&&) = default;
+      constexpr time_t& operator=(time_t const&) = default;
+      // constexpr time_t(seconds const& s):sec(s){}
+      constexpr time_t(seconds const& s, nanoseconds ns = nanoseconds{0}):sec(s),ns(ns){}
+      constexpr time_t(nanoseconds ns):ns(ns){}
+      friend auto operator<<(std::ostream&os, time_t const& t)->std::ostream&{
+         return os << t.sec.count() << "s_" << t.ns.count() << "ns";
+      }
+   };
    
    // enum kind_t {
    //    nil=0, boolean, sigint, unsint, float32, float64, str, bin, arr, map, ext, time
@@ -77,6 +94,8 @@ struct m5g_value
    template<class...Ts>
    constexpr m5g_value(Ts&&...vs) : var(std::forward<Ts>(vs)...) {}
    
+   constexpr m5g_value(unsigned u):var(uint64_t(u)){}
+   
    // template<class> constexpr m5g_value(m5g_value&&val) : var(std::forward<m5g_value>(val).var) {}
    constexpr m5g_value(m5g_value&&val)     { *this = std::move(val); }
    constexpr m5g_value(m5g_value &val)     { *this = val; }
@@ -84,11 +103,10 @@ struct m5g_value
    /* constexpr */ m5g_value& operator=(m5g_value&&val)      { this->var=std::move(val.var); val.var={}; return *this; }
    /* constexpr */ m5g_value& operator=(m5g_value const&val) { this->var=val.var;                        return *this; }
    
-   constexpr m5g_value(unsigned u):var(uint64_t(u)){}
    
    auto get_as_optional_long_double()const{
       return std::visit(
-         [&](auto const& arg)->std::optional<long double>{
+         [](auto const& arg)->std::optional<long double>{
             using T = std::decay_t<decltype(arg)>;
             if constexpr (std::is_arithmetic_v<T> and not std::is_same_v<T,bool>){
                return arg;
@@ -97,6 +115,13 @@ struct m5g_value
             }
          }, this->var);
    };
+   
+   constexpr bool is_number()const{
+      return std::visit([]<typename T>(T&&){
+         // using T = std::decay_t<decltype(arg)>;
+         return std::is_arithmetic_v<T> and not std::is_same_v<T,bool>;
+      },var);
+   }
    
    /// Compare for sorting in map
    /// bin_t,array_t,map_t,ext_t should never be a key in map
@@ -132,6 +157,7 @@ struct m5g_value
       return this->var == other.var;
    }
    
+   // stringify to std::ostream like cerr or cout
    friend auto operator<<(ostream&os, m5g_value const& val) ->ostream& {
       std::visit([&](auto&& arg) {
          using T = std::decay_t<decltype(arg)>;
@@ -155,7 +181,7 @@ struct m5g_value
                os << comma << k << ": " << w, comma = ", ";
             os << "}";
          }else if constexpr (is_same_v<T, time_t>){
-            os << arg.count() << "ns";
+            os << arg.sec.count() << "s_" << arg.ns.count() << "ns";
          }else if constexpr (is_same_v<T, string>){
             os << std::quoted(arg);
          }else
@@ -222,15 +248,16 @@ struct m5g_byte_stream : std::vector<uint8_t>
       
       /// positive fixnum stores 7-bit positive integer 0XXXXXXX
       pos_fixnum_id  = 0b00000000,
+      pos_fixnum_id_mask = 0b10000000,
       pos_fixnum_max = 127,
-      // pos_fixnum_data_mask = 0b01111111,
-      // pos_fixnum_id_mask = (uint8_t)~pos_fixnum_data_mask,
+      pos_fixnum_data_mask = (uint8_t)~pos_fixnum_id_mask, //0b01111111,
       
       /// negative fixnum stores 5-bit negative integer 111YYYYY
       neg_fixnum_id = (uint8_t)0b11100000,
       neg_fixnum_id_mask = (uint8_t)0b11100000,
       // neg_fixnum_min = (uint8_t)~neg_fixnum_id_mask,
       // neg_fixnum_data_mask = (uint8_t)0b00011111,
+      neg_fixnum_data_mask = (uint8_t)~neg_fixnum_id_mask,
       
       /// uint 8 stores a 8-bit unsigned integer
       uint8  = 0xcc,
@@ -276,7 +303,7 @@ struct m5g_byte_stream : std::vector<uint8_t>
       /// fixarray stores an array whose length is upto 15 elements:
       fixarr_id = 0b10010000,  ///1001XXXX
       fixarr_id_mask = 0b11110000, //(uint8_t)~fixarr_len_mask,
-      // fixarr_len_mask = (uint8_t)~fixarr_id_mask, //0b00001111,
+      fixarr_len_mask = (uint8_t)~fixarr_id_mask, //0b00001111,
       fixarr_len_max = 0b00001111,
       
       /// array 16 stores an array whose length is upto (2^16)-1 elements:
@@ -288,9 +315,8 @@ struct m5g_byte_stream : std::vector<uint8_t>
       /// fixmap stores a map whose length is upto 15 elements
       fixmap_id = 0b10000000,  ///1001XXXX
       fixmap_id_mask = 0b11110000,
-      fixmap_len_max = 0b00001111,
-      // fixmap_len_mask = 0b00001111,
-      // fixmap_id_mask = (uint8_t)~fixmap_len_mask,
+      fixmap_len_mask = (uint8_t)~fixmap_id_mask,
+      fixmap_len_max = fixmap_len_mask, //0b00001111,
       
       /// map 16 stores a map whose length is upto (2^16)-1 elements
       map16 = 0xde,
@@ -326,7 +352,7 @@ struct m5g_byte_stream : std::vector<uint8_t>
          [](auto&&a){
             static_assert(always_false_v<decltype(a)>,"expected overload for type");
          },
-         [&](m5g_value::nil_t arg){ 
+         [&](m5g_value::nil_t){ 
             detail() << nil;
          },
          [&](bool b){ 
@@ -439,13 +465,12 @@ struct m5g_byte_stream : std::vector<uint8_t>
          },
          [&](m5g_value::time_t const& t){
             using namespace std::chrono;
-            auto sec  = uint64_t(duration_cast<seconds>(t).count());
-            auto purenanosec = t - duration_cast<seconds>(t);
-            auto nsec = uint64_t(duration_cast<nanoseconds>(purenanosec).count());
-            if (sec <= UINT32_MAX and nsec == 0){
+            int64_t sec = t.sec.count();
+            uint32_t nsec = t.ns.count();
+            if (sec <= UINT32_MAX and sec >= 0 and nsec == 0){
                detail() << timestamp32 << char(-1) << uint32_t(sec);
-            }else if (sec <= 0x3'FFFF'FFFFu){
-               detail() << timestamp64 << char(-1) << ((nsec << 34)|sec);
+            }else if (sec == (sec & 0x3'FFFF'FFFF)){
+               detail() << timestamp64 << char(-1) << ((uint64_t(nsec) << 34)|sec);
             }else{
                detail() << timestamp96 << uint8_t(12)
                         << char(-1) << uint32_t(nsec) << sec;
@@ -461,12 +486,126 @@ struct m5g_byte_stream : std::vector<uint8_t>
       return *this;
    }
    
+   m5g_byte_stream& operator>>(m5g_value&val){
+      auto&var=val.var;
+      auto set_array = [&](size_t len){
+         var = m5g_value::array_t(len);
+         for(auto&v:get<m5g_value::array_t>(var))
+            *this >> v;
+      };
+      auto set_map = [&](size_t len){
+         var = m5g_value::map_t(len);
+         for(auto&[k,v]:get<m5g_value::map_t>(var))
+            *this >> k >> v;
+      };
+      auto set_str = [&](size_t len){
+         var = std::string(begin(),begin()+len);
+         erase(begin(),begin()+len);
+      };
+      auto set_bin = [&](size_t len){
+         var = m5g_value::bin_t(begin(),begin()+len);
+         erase(begin(),begin()+len);
+      };
+      auto set_ext = [&](size_t len){
+         uint8_t type;
+         detail() >> type;
+         if(type == (uint8_t)-1){ //time
+            switch(len){
+               using namespace std::chrono;
+               case 4:{
+                  uint32_t sec;
+                  detail() >> sec;
+                  var = m5g_value::time_t(seconds(sec),nanoseconds(0));
+               }break;
+               case 8:{
+                  uint64_t data;
+                  detail()>>data;
+                  var = m5g_value::time_t{
+                     .sec = seconds{data&((1ull<<34)-1)},
+                     .ns = nanoseconds{data>>34},
+                  };
+               }break;
+               case 12:{
+                  int64_t sec;
+                  uint32_t nsec;
+                  detail()>>nsec>>sec;
+                  var = m5g_value::time_t{seconds(sec),nanoseconds(nsec)};
+               }break;
+               default:
+                  throw std::logic_error("wrong len {} for ext type -1 time");
+            }
+         }else{
+            var = m5g_value::ext_t{
+               .type=type, 
+               .data= m5g_value::bin_t(begin(),begin()+len)
+            };
+            erase(begin(),begin()+len);
+         }
+      };
+      enum format f{};// = front();
+      detail() >> f;
+      switch(f){
+         case nil  : var = m5g_value::nil; break;
+         case falso: var = false; break;
+         case truo : var = true; break;
+         case uint8 :{ uint8_t  v; detail() >> v; var = uint64_t(v);} break;
+         case uint16:{ uint16_t v; detail() >> v; var = uint64_t(v);} break;
+         case uint32:{ uint32_t v; detail() >> v; var = uint64_t(v);} break;
+         case uint64:{ uint64_t v; detail() >> v; var =          v; } break;
+         case  int8 :{  int8_t  v; detail() >> v; var =  int64_t(v);} break;
+         case  int16:{  int16_t v; detail() >> v; var =  int64_t(v);} break;
+         case  int32:{  int32_t v; detail() >> v; var =  int64_t(v);} break;
+         case  int64:{  int64_t v; detail() >> v; var =          v; } break;
+         //
+         case  str8 :{ uint8_t  len; detail()>>len; set_str(len); } break;
+         case  str16:{ uint16_t len; detail()>>len; set_str(len); } break;
+         case  str32:{ uint32_t len; detail()>>len; set_str(len); } break;
+         case  bin8 :{ uint8_t  len; detail()>>len; set_bin(len); } break;
+         case  bin16:{ uint16_t len; detail()>>len; set_bin(len); } break;
+         case  bin32:{ uint32_t len; detail()>>len; set_bin(len); } break;
+         case  arr16:{ uint16_t len; detail()>>len; set_array(len); } break;
+         case  arr32:{ uint32_t len; detail()>>len; set_array(len); } break;
+         case  map16:{ uint16_t len; detail()>>len; set_map(len); } break;
+         case  map32:{ uint32_t len; detail()>>len; set_map(len); } break;
+         //
+         case fixext1 : set_ext(1); break;
+         case fixext2 : set_ext(2); break;
+         case fixext4 : set_ext(4); break;
+         case fixext8 : set_ext(8); break;
+         case fixext16: set_ext(16); break;
+         case ext8 : { uint8_t  len; detail()>>len; set_ext(len); } break;
+         case ext16: { uint16_t len; detail()>>len; set_ext(len); } break;
+         case ext32: { uint32_t len; detail()>>len; set_ext(len); } break;
+         default:
+            // The longest masks go first
+            if((f&fixmap_id_mask)==fixmap_id){
+               uint8_t len = f & fixmap_len_mask;
+               set_map(len);
+            }else if((f&fixarr_id_mask)==fixarr_id){
+               uint8_t len = f & fixarr_len_mask;
+               set_array(len);
+            }else if((f&fixstr_id_mask)==fixstr_id){  //is_fixstr(f)
+               size_t len = f & fixstr_len_mask;
+               var = std::string(begin(),begin()+len);
+            }else if((f&neg_fixnum_id_mask)==neg_fixnum_id){ //is_neg_fixnum(f)){
+               var = int64_t(f&neg_fixnum_data_mask);
+            }else if((f&pos_fixnum_id_mask)==pos_fixnum_id){ //is_pos_fixnum(f)){
+               var = uint64_t(f&pos_fixnum_data_mask);
+            }else{
+               // ToDo use std::format but g++10 on Mac has no header <format>
+               // throw std::logic_error(std::format("Unexpencted format {}.", f));
+               throw std::logic_error("Unexpencted msgpack format byte {}");
+            }
+      }//switch
+      return *this;
+   }
+   
 private:
-   struct detail_ /* : m5g_byte_stream */ {
+   struct detail_ {
       m5g_byte_stream& mbs;
       
       template<typename T>
-      auto operator<<(T const& v) 
+      auto operator<<(T const& v) noexcept
       ->std::enable_if_t<std::is_arithmetic_v<T> 
                         and not std::is_same_v<T,bool>, detail_& >
       {
@@ -479,8 +618,40 @@ private:
          return *this;
       }
       
+      template<typename T>
+      auto operator>>(T const& val)
+      ->std::enable_if_t<std::is_arithmetic_v<T> 
+                        and not std::is_same_v<T,bool>, detail_& >
+      {
+         using namespace std;
+         if(mbs.size() < sizeof(T)){
+            cerr<<"err in "<<__func__<<"(): input stream is too short (size:"<<mbs.size()
+                  <<", requested:"<< sizeof(T)<<")"<<endl;
+            std::stringstream ss;
+            ss<<"input stream is too short (size:"<<mbs.size()<<", requested:"<< sizeof(T)<<")"<<endl;
+            throw std::logic_error(ss.str());
+            //mbs.error_flag() = true;
+            return *this;
+         }
+       #if BYTE_ORDER == LITTLE_ENDIAN
+         std::reverse_iterator<uint8_t*> out_it{(uint8_t*)(&val+1)}, out_end{(uint8_t*)(&val)};
+       #else
+         uint8_t* out_it{(uint8_t*)(&val)}, *out_end{(uint8_t*)(&val+1)};
+       #endif
+         auto iter = mbs.begin();
+         while (out_it != out_end && iter != mbs.end()) {
+            *out_it++ = *iter++;
+         }
+         mbs.erase(mbs.begin(),iter);  ///FIXME OPTIMIZE as stream circular buffer
+         return *this;
+      }
+      
       detail_& operator<<(enum format ef){
          return *this << (uint8_t)ef;
+      }
+      
+      detail_& operator>>(enum format &ef){
+         return *this >> (uint8_t&)ef;
       }
       
       detail_& operator<<(std::string const& s)
@@ -528,4 +699,4 @@ namespace m5gpack {
    // using m5gblob  = m5g::blob;
    using m5garr   = m5g::array;
    using m5gmap   = m5g::map;
-};
+}
