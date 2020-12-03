@@ -23,13 +23,13 @@ before_script:
 # Use TLS https://docs.gitlab.com/ee/ci/docker/using_docker_build.html#tls-enabled
 docker_image:
   stage: prepare
-  image: docker:19.03.12
+  image: docker:latest #:19.03.12
   services:
-  - docker:19.03.12-dind
+  - docker:dind #:19.03.12-dind
   only:
     changes:
     - Dockerfile
-    #- .gitlab-ci.yml
+    - .gitlab-ci.yml
     refs:
     - main
     - master
