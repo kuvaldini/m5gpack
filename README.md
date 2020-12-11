@@ -1,137 +1,99 @@
-[![pipeline status](https://gitlab.com/kyb/byte_vector/badges/master/pipeline.svg)](https://gitlab.com/kyb/byte_vector/pipelines?scope=branches) 
-[![releases](https://img.shields.io/badge/byte_vector-releases-green.svg?style=flat)](https://gitlab.com/kyb/byte_vector/-/releases) 
-[![Gitpod.ready-to-code](https://img.shields.io/badge/Gitpod-ready--to--code-blue?logo=gitpod)](https://gitpod.io/#https://gitlab.com/kyb/byte_vector) 
+[![pipeline status](https://gitlab.com/kyb/m5gpack/badges/master/pipeline.svg)](https://gitlab.com/kyb/m5gpack/pipelines?scope=branches) 
+[![releases](https://img.shields.io/badge/m5gpack-releases-green.svg?style=flat)](https://gitlab.com/kyb/m5gpack/-/releases) 
+[![Gitpod.ready-to-code](https://img.shields.io/badge/Gitpod-ready--to--code-blue?logo=gitpod)](https://gitpod.io/#https://gitlab.com/kyb/m5gpack) 
 
-byte_vector for C++
+MessagePack for C++
 ===================
-**byte_vector** is a family of C++ types and functions to provide next functionality:
-- serialization to sequence of bytes
-- deserialization from sequence of bytes
-- print array of bytes in hex to any std::ostream like cout, cerr or stringstream
+According to [MessagePack specification](https://github.com/msgpack/msgpack/blob/master/spec.md)
 
-`byte_vector` is a struct extended from `std::vector<uint8_t>`.  
-It provides ability to serialize and deserialize C++ basic types and classes 
-by using family of template operators `byte_vector<<` and `byte_range>>`. 
+**m5gpack** is a family of C++ types and functions to provide next functionality:
+- serialize C++ data structures to MessagePack sequence of bytes
+- deserialize
 
-
-### Example of operation
-Lets consider example program `byte_vector-demo.cpp`
+A list of types:
 ```cpp
-#include "byte_vector.hh"
-
-using namespace std;
-using namespace std::literals;
-
-struct X{
-   int a=1111111;
-   short b =2;
-   string c = "asd";
-   
-   friend ostream& operator<<(ostream&os, X const& x){
-      return os<<x.a<<" "<<x.b<<" "<<x.c;
-   }
-   friend byte_vector& operator<<(byte_vector&bv, X const& x){
-      return bv<<tuple(x.a,x.b,x.c); 
-      //OR return bv<<x.a<<x.b<<x.c;
-   }
-   friend byte_range& operator>>(byte_range&br, X&x){
-      return br>>tie(x.a,x.b,x.c);
-      //OR return br>>x.a>>x.b>>x.c;
-   }
-};
-
-int main()
-{
-   {
-   byte_vector bv;
-   bv<<1312314151617;
-   cout<<byte_range_ascii{bv}<<endl;             /// 0x000: 00 00 01 31 8C 04 D2 C1  |...1....|
-   cout<<byte_range_ascii{bv<<short(32)}<<endl;  /// 0x000: 00 00 01 31 8C 04 D2 C1 00 20  |...1..... |
-   bv<< "Hello"s << " world"sv << '!' ;
-   cout<<byte_range_ascii{bv}<<endl;             /// 0x000: 00 00 01 31 8C 04 D2 C1 00 20 00 05 48 65 6C 6C  |...1..... ..Hell|
-   }                                             /// 0x010: 6F 00 06 20 77 6F 72 6C 64 21                    |o.. world!|
-   cerr<<"----------------"<<endl;               /// ----------------
-   {
-   /// Serialize custom struct
-   byte_vector bv; //bv={};
-   bv<<X{2344567,-1,"hello"};
-   cout<<byte_range_ascii(bv)<<endl;             /// 0x000: 00 23 C6 77 FF FF 00 05 68 65 6C 6C 6F  |.#.w....hello|
-   byte_range br(bv);
-   /// Deserialize custom struct
-   X x;
-   br>>x;
-   (br.size()? cout<<byte_range_ascii(br) : cout<<"<empty>")<<endl;  /// <empty>
-   cout<<x<<endl;                                /// 2344567 -1 hello
-   }
+namespace m5g {
+   using value = ...;  /// The MessagePack value can contain 
+                       /// nil, boolean, integer, float-point, 
+                       /// blob, array, map and timestamp
+   using nil_t = ...;
+   constexpr auto nil = nil_t{};
+   using bin   = ...;  /// Growable array of bytes (std::vector<uint8_t>)
+   using array = ...;  /// Growable array of m5g::value`s (std::vector<m5g::value>)
+   using arr   = array;
+   using map   = ...;  /// Growable assosiative array of m5g::value`s
+   using ext   = ...;  /// see MessagePack specification
+   using timestamp = ...;   /// Timestamp representation seconds+nanoseconds
+   using stream = ...; /// Stream of bytes. To be stored or transferred.
+                       /// m5g::value could be serialized to 
+                       /// and deserialized from m5g::stream 
+                       /// using operators << and >>
+   using byte_stream = stream;
 }
 ```
+`m5g::value` is extended `std::variant<nil_t,bin,arr,map,ext,timestamp>`. 
+`m5g::value` is constructed from any of MessagePack types.
+Everything applicable to `std::variant<>` is also applicable to `m5g::value`.
+`m5g::value` could be serialized to `m5g::stream` and deserialized from it. 
+`m5g::stream` in its turn is an extension of `std::vector<uint8_t>`, all 
+functions applicable to `std::vector<uint8_t>` are also applicable to `m5g::stream`.
 
-This is an output from `./byte_vector-demo`
+
+
+## Example of operation
+Lets consider example program `m5gpack-demo.cpp`
+```cpp
+ToDo add demo program source
 ```
-0x000: 00 00 01 31 8C 04 D2 C1  |...1....|
-       ^^^^^^^^^^^^^^^^^^^^^^^ 8 byte int
-0x000: 00 00 01 31 8C 04 D2 C1 00 20  |...1..... |
-                              ^^^^^ 2 byte short
-0x000: 00 00 01 31 8C 04 D2 C1 00 20 00 05 48 65 6C 6C  |...1..... ..Hell|
-0x010: 6F 00 06 20 77 6F 72 6C 64 21                    |o.. world!|
-                                     ^^^^^ string length 2byte value 5
-          ^^^^^ string_view lenght 2byte value 6
-----------------
-0x000: 00 23 C6 77 FF FF 00 05 68 65 6C 6C 6F  |.#.w....hello|
-       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ custom struct of int,short,string
-       ^^^^^^^^^^^ int
-                   ^^^^^ short value -1
-                         ^^^^^ string length 5
-                               ^^^^^^^^^^^^^^ string data of 5 bytes
-<empty>
-^^^^^^^ after deserialization
-2344567 -1 hello
-^^^^^^^^^^^^^^^^ deserialized struct in text format
+
+This is an output from `./m5gpack-demo`
+```
+ToDo add output
 ```
 
 Build and run it with:
 ```
-cmake -Bbuild  &&  cmake --build build  &&  ./build/byte_vector-demo 
+cmake -Bbuild  &&  cmake --build build  &&  ./build/m5gpack-demo 
 ```
 
 
-Integrate to user project
+Integrate to user project **[TODO validate and fix]**
 -----
 ### 1. The most straightforward way is to include this project's directory.
 I suggest to use [git subrepo](https://github.com/ingydotnet/git-subrepo)
 instead of git subtree and git submodule.
 ```
-git subrepo clone git@gitlab.com:kyb/byte_vector.git byte_vector
+git subrepo clone git@gitlab.com:kyb/m5gpack.git m5gpack
 ```
-Then add byte_vector project directory to includes.
+Then add m5gpack project directory to includes.
 
 ### 2. Using the only header file – may be the most convenient way
-Download amalgama header from the project's [releases page](https://gitlab.com/kyb/byte_vector/-/releases)
+Download amalgama header from the project's [releases page](https://gitlab.com/kyb/m5gpack/-/releases)
 ```
 cd your/project/include_dir
-curl -fsSL https://gitlab.com/kyb/byte_vector/raw/artifacts/master/$(curl https://gitlab.com/kyb/byte_vector/raw/artifacts/master/byte_vector.hh -fsSL) -o byte_vector.hh
+curl -fsSL https://gitlab.com/kyb/m5gpack/raw/artifacts/master/$(curl https://gitlab.com/kyb/m5gpack/raw/artifacts/master/m5gpack.hh -fsSL) -o m5gpack.hh
 ```
 
 ### 3. Using CMake `target_link_libraries` with interface library
 *Assuming the repo has been already cloned as sugested in (1)*  
-Since `byte_vector` this is header-only library there is no need to link with it.
-But CMake has feature INTERFACE LIBRARIES. byte_vector provides two interface 
-libraries: `byte_vector` and `byte_vector_amalgama`. Linking against them addes 
+Since `m5gpack` this is header-only library there is no need to link with it.
+But CMake has feature INTERFACE LIBRARIES. m5gpack provides two interface 
+libraries: `m5gpack` and `m5gpack_amalgama`. Linking against them addes 
 include directory to the target.
-1. `byte_vector`
+1. `m5gpack`
     ```
-    target_link_libraries(your_executable PRIVATE byte_vector)
+    target_link_libraries(your_executable PRIVATE m5gpack)
     ```
     ```
-    #include "byte_vector.hpp"
+    #include "m5gpack.hpp"
     #include "byte_range.hpp"
     #include "byte_range_ascii.hpp"
     #include "byte_range_hex.hpp"
     ```
-2. `byte_vector_amalgama`
+2. `m5gpack_amalgama`
     ```
-    target_link_libraries(your_executable PRIVATE byte_vector_amalgama)
+    target_link_libraries(your_executable PRIVATE m5gpack_amalgama)
     ```
     ```
-    #include "byte_vector.hh"
+    #include "m5gpack.hh"
     ```
