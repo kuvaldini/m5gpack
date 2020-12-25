@@ -4,6 +4,9 @@
 
 MessagePack for C++
 ===================
+[![GitLab|origin](https://img.shields.io/badge/GitLab-origin-darkorange?logo=gitlab)](https://gitlab.com/kyb/m5gpack) 
+[![GitHub|mirror](https://img.shields.io/badge/GitHub-mirror-blue?logo=github)](https://github.com/kuvaldini/m5gpack)
+
 According to [MessagePack specification](https://github.com/msgpack/msgpack/blob/master/spec.md)
 
 **m5gpack** is a family of C++ types and functions to provide next functionality:
