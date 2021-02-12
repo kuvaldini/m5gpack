@@ -11,7 +11,7 @@ According to [MessagePack specification](https://github.com/msgpack/msgpack/blob
 
 **m5gpack** is a family of C++ types and functions to provide next functionality:
 - serialize C++ data structures to MessagePack sequence of bytes
-- deserialize
+- deserialize series of bytes to C++ data tuples
 
 A list of types:
 ```cpp
@@ -35,8 +35,8 @@ namespace m5g {
 }
 ```
 `m5g::value` is extended `std::variant<nil_t,bin,arr,map,ext,timestamp>`. 
-`m5g::value` is constructed from any of MessagePack types.
-Everything applicable to `std::variant<>` is also applicable to `m5g::value`.
+`m5g::value` is constructable from any of MessagePack types.
+Everything applicable to `std::variant<>` is also applicable to `m5g::value`, i.e `std::visit()`.
 `m5g::value` could be serialized to `m5g::stream` and deserialized from it. 
 `m5g::stream` in its turn is an extension of `std::vector<uint8_t>`, all 
 functions applicable to `std::vector<uint8_t>` are also applicable to `m5g::stream`.
